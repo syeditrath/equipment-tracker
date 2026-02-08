@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Equipment Time Tracking</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f0f2f5; margin:0; padding:20px; }
+    h2 { text-align:center; color:#333; }
+
+    .card { background:#fff; padding:20px; border-radius:16px; margin-bottom:20px; box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+
+    input, select, button { padding:10px; margin:5px 0; border:1px solid #ccc; border-radius:8px; font-size:14px; }
+    button { background:#007bff; color:white; border:none; transition:0.2s; }
+    button:hover { background:#0056b3; }
+
+    table { width:100%; border-collapse:collapse; margin-top:15px; }
+    th, td { border:1px solid #ddd; padding:10px; text-align:center; }
+    th { background:#f7f7f7; color:#555; }
+
+    .project-container { margin-bottom:15px; background:#f9f9f9; padding:10px; border-radius:10px; }
+    .equipment-item { display:flex; justify-content:space-between; align-items:center; margin-left:15px; margin-top:5px; }
+    .equipment-item button { background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:6px; font-size:12px; }
+    .equipment-item button:hover { background:#a71d2a; }
+  </style>
+</head>
+<body>
+
+<h2>Equipment Time Tracking</h2>
+
+<div class="card">
+  <h3>Manage Projects & Equipment</h3>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+    <input id="newProject" placeholder="New Project" />
+    <button onclick="addProject()">Add Project</button>
+  </div>
+
+  <hr/>
+
+  <h4>Add Equipment to Project</h4>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+    <select id="projectEquipSelect"></select>
+    <input id="newEquipment" placeholder="Equipment Name" />
+    <button onclick="addEquipment()">Add Equipment</button>
+  </div>
+
+  <div id="projectList" style="margin-top:15px;"></div>
+</div>
+
+<div class="card">
+  <h3>Log Hours</h3>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+    <input type="date" id="date" />
+    <select id="projectSelect" onchange="loadEquipment()">
+      <option value="">Select Project</option>
+    </select>
+    <input id="supervisor" placeholder="Supervisor Name" />
+    <input id="phone" placeholder="Phone No" />
+  </div>
+
+  <div id="equipmentTable" style="margin-top:15px;"></div>
+
+  <div style="margin-top:15px; display:flex; gap:10px;">
+    <button onclick="submitLog()">Submit</button>
+    <button onclick="exportExcel()">Export Excel</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Summary</h3>
+  <div id="summary"></div>
+</div>
+
+<script>
+let projectMap = JSON.parse(localStorage.getItem('projectMap')) || {"Project A": ["Excavator","Crane"], "Project B": ["MTBM","Generator"]};
+let logs = JSON.parse(localStorage.getItem('logs')) || [];
+function save(){ localStorage.setItem('projectMap', JSON.stringify(projectMap)); localStorage.setItem('logs', JSON.stringify(logs)); }
+
+function renderProjects(){
+  const list = document.getElementById('projectList');
+  const select = document.getElementById('projectSelect');
+  const equipSelect = document.getElementById('projectEquipSelect');
+  list.innerHTML=''; select.innerHTML='<option value="">Select Project</option>'; equipSelect.innerHTML='';
+
+  Object.keys(projectMap).forEach(p=>{
+    const opt1=document.createElement('option'); opt1.value=p; opt1.textContent=p; select.appendChild(opt1);
+    const opt2=document.createElement('option'); opt2.value=p; opt2.textContent=p; equipSelect.appendChild(opt2);
+
+    const div = document.createElement('div');
+    div.className='project-container';
+    let equipHtml='';
+    (projectMap[p]||[]).forEach(eq=>{
+      equipHtml+=`<div class="equipment-item">${eq} <button onclick="deleteEquipment('${p}','${eq}')">Delete</button></div>`;
+    });
+    div.innerHTML=`<strong>${p}</strong>${equipHtml}`;
+    list.appendChild(div);
+  });
+}
+
+function addProject(){ const name=document.getElementById('newProject').value.trim(); if(!name) return alert('Enter project name'); if(projectMap[name]) return alert('Project already exists'); projectMap[name]=[]; document.getElementById('newProject').value=''; save(); renderProjects(); }
+function addEquipment(){ const proj=document.getElementById('projectEquipSelect').value; const eq=document.getElementById('newEquipment').value.trim(); if(!proj||!eq) return alert('Select project & enter equipment'); projectMap[proj].push(eq); document.getElementById('newEquipment').value=''; save(); renderProjects(); alert('Equipment added'); }
+function deleteEquipment(project,equipment){ if(!confirm(`Delete ${equipment} from ${project}?`)) return; projectMap[project]=projectMap[project].filter(e=>e!==equipment); save(); renderProjects(); }
+
+function loadEquipment(){
+  const proj=document.getElementById('projectSelect').value;
+  const div=document.getElementById('equipmentTable');
+  if(!proj){ div.innerHTML=''; return; }
+  const eqs=projectMap[proj]||[];
+  if(eqs.length===0){ div.innerHTML='<p>No equipment added</p>'; return; }
+  let html='<table><tr><th>Equipment</th><th>Hours</th></tr>';
+  eqs.forEach(e=>{
+    const safeId=e.replace(/[^a-zA-Z0-9]/g,'_');
+    html+=`<tr><td>${e}</td><td><input type='number' min='0' id='hrs_${safeId}'></td></tr>`;
+  });
+  html+='</table>';
+  div.innerHTML=html;
+}
+
+function submitLog(){
+  const date=document.getElementById('date').value;
+  const project=document.getElementById('projectSelect').value;
+  const sup=document.getElementById('supervisor').value;
+  const phone=document.getElementById('phone').value;
+  if(!date||!project||!sup||!phone) return alert('Fill all fields');
+  (projectMap[project]||[]).forEach(e=>{
+    const safeId=e.replace(/[^a-zA-Z0-9]/g,'_');
+    const hrs=document.getElementById('hrs_'+safeId)?.value||0;
+    if(hrs>0){ logs.push({date, project, equipment:e, hours:Number(hrs), supervisor:sup, phone}); }
+  });
+  save(); renderSummary(); alert('Saved');
+}
+
+function renderSummary(){
+  const div=document.getElementById('summary');
+  let map={};
+  logs.forEach(l=>{ map[l.project]=map[l.project]||{}; map[l.project][l.equipment]=(map[l.project][l.equipment]||0)+Number(l.hours); });
+  let html='';
+  Object.entries(map).forEach(([p,eq])=>{ html+=`<h4>${p}</h4><table><tr><th>Equipment</th><th>Hours</th></tr>`; Object.entries(eq).forEach(([e,h])=>{ html+=`<tr><td>${e}</td><td>${h}</td></tr>`; }); html+='</table>'; });
+  div.innerHTML=html||'No data yet';
+}
+
+function exportExcel(){ if(logs.length===0) return alert('No data to export'); const ws=XLSX.utils.json_to_sheet(logs); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Logs'); XLSX.writeFile(wb,'equipment_logs.xlsx'); }
+
+renderProjects(); renderSummary();
+</script>
+
+</body>
+</html>
